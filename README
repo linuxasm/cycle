@@ -1,0 +1,48 @@
+What is "cycle"?
+----------------
+
+"cycle" is todo program designed for events that repeat. 
+
+Who might use "cycle"?
+----------------------
+
+Someone interested in assembler might find parts of the code
+useful. If a strange clone of the author exists they might
+enjoy the program, everyone else would not be interested.
+ 
+Installing
+----------
+
+Install from within the source directory with:
+ sudo make install
+
+Limitations
+-----------
+
+"cycle" only runs on X86 processors using
+the Linux kernel version 2.4 or later.  It isn't
+portable to other UNIX flavors but most linux flavors
+run on x86 processors.
+
+Features
+--------
+
+ It can act as a simple diary or log file which
+ is played back at specified times in the future.
+ This provides persistent reminders if needed.
+ 
+ Features:
+
+           Quick daily review of history and todos
+           Easy scheduling and composing
+           Search command
+           Links to web and local files
+
+Authors
+-------
+
+Jeff Owens linuxasm@gmail.com
+
+
+
+

@@ -1,0 +1,45 @@
+
+ 
+Installing
+----------
+
+
+
+Limitations
+-----------
+
+AsmTool programs only run on X86 processors using
+the Linux kernel version 2.4 or later.  It isn't
+portable to other UNIX flavors but over 90 percent
+of all UNIX installations are for Linux X86.
+
+Most AsmTools runs in a console and terminal.  When
+run in the console, only keyboard commands are
+available. The console/terminal programs are
+built using asmlib.
+
+AsmTools that require a x server are:
+  asmbug - debugger
+  tracex - trace x server communication
+  xhelper - automate desktop programss
+  asmlibx - library needed to build asmbug
+            and xhelper
+
+
+Features
+--------
+
+Many of the AsmTool programs are described within
+AsmRef and that may be a good place to begin.  Each
+program also has some additional documentation in
+the source files.
+
+When programs are installed as a .deb or .rpm look
+for documentation at:
+
+  /usr/share/doc/asmref
+  /usr/share/doc/(name of package)
+  man (name of package)
+
+
+

@@ -1,0 +1,351 @@
+
+;   Copyright (C) 2007 Jeff Owens
+;
+;   This program is free software: you can redistribute it and/or modify
+;   it under the terms of the GNU General Public License as published by
+;   the Free Software Foundation, either version 3 of the License, or
+;   (at your option) any later version.
+;
+;   This program is distributed in the hope that it will be useful,
+;   but WITHOUT ANY WARRANTY; without even the implied warranty of
+;   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;   GNU General Public License for more details.
+;
+;   You should have received a copy of the GNU General Public License
+;   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;--------------------------------------------------------------------
+;%define DEBUG    ;enable debug code by removing comment character
+
+  [section .text]
+extern crt_str
+extern raw_set1,raw_unset1
+
+global testme,main
+main:
+testme:
+  call	raw_set1
+  call	keysig_wait_set
+  js	fix_raw
+test_loop:
+  call	keysig_wait
+  mov	al,[kbuf]	;get result
+  cmp	al,-2		;
+  je	test_signal
+  cmp	al,-1
+  je	test_mouse
+  cmp	al,'q'
+;;  je	test_exit
+  mov	ecx,m1
+  call	crt_str
+  jmp	short exit ;;test_loop
+test_signal:
+  mov	ecx,m3
+  call	crt_str
+  jmp	exit	;;test_loop
+test_mouse:
+  mov	ecx,m2
+  call	crt_str
+  jmp	exit	;;test_loop
+test_exit:
+  mov	ecx,m4
+  call	crt_str
+  call	keysig_wait_close
+fix_raw:
+exit:
+  call	raw_unset1
+	mov	eax,1
+	mov	ebx,0			;normal exit
+	int	0x80			;exit
+
+  [section .data]
+m1:	db 'key found',0ah,0
+m2:	db 'mouse found',0ah,0
+m3:     db 'signal found',0ah,0
+m4:     db 'quit key',0ah,0
+;-----------------------------------------------------------
+  [section .text]
+
+POLLIN      equ 0x0001   ;There is data to read
+POLLPRI     equ 0x0002   ;There is urgent data to read
+POLLOUT     equ 0x0004   ;Writing now will not block
+POLLERR     equ 0x0008   ;Error condition
+POLLHUP     equ 0x0010   ;Hung up
+POLLNVAL    equ 0x0020   ;Invalid request: fd not open
+
+
+SIGHUP    equ 00000001h ;Term    Hangup on controlling terminal or parent death
+SIGINT    equ 00000002h ;2      Term    Interrupt from keyboard
+SIGQUIT   equ 00000004h ;3      Core    Quit from keyboard
+SIGILL    equ 00000008h ;4      Core    Illegal Instruction
+SIGTRAP   equ 00000010h ;5      Core    Trace/breakpoint trap
+SIGIOT    equ 00000020h ;6      Core    IOT trap. A synonym for SIGABRT
+SIGABRT   equ 00000020h ;6      Core    Abort signal from abort(3)
+SIGBUS    equ 00000040h ;7      Core    Bus error (bad memory access)
+SIGFPE    equ 00000080h ;8      Core    Floating point exception
+SIGKILL   equ 00000100h ;9      Term    Kill signal
+SIGUSR1   equ 00000200h ;10     Term    User-defined signal 1
+SIGSEGV   equ 00000400h ;11     Core    Invalid memory reference
+SIGUSR2   equ 00000800h ;12     Term    User-defined signal 2
+SIGPIPE   equ 00001000h ;13     Term    Broken pipe: write to pipe with no readers
+SIGALRM   equ 00002000h ;14     Term    Timer signal from alarm(2)
+SIGTERM   equ 00004000h ;15     Term    Termination signal
+SIGSTKFLT equ 00008000h ;16     Term    Stack fault on coprocessor (unused)
+SIGCHLD   equ 00010000h	;17     Ign     Child stopped or terminated
+SIGCONT   equ 00020000h ;18     ---     Continue if stopped
+SIGSTOP   equ 00040000h ;19     Stop    Stop process
+SIGTSTP   equ 00080000h ;20     Stop    Stop typed at tty
+SIGTTIN   equ 00100000h ;21     Stop    tty input for background process
+SIGTTOU   equ 00200000h ;22     Stop    tty output for background process
+SIGURG    equ 00400000h ;23     Ign     Urgent condition on socket (4.2 BSD)
+SIGXCPU   equ 00800000h ;24     Core    CPU time limit exceeded (4.2 BSD)
+SIGXFSZ   equ 01000000h ;25     Core    File size limit exceeded (4.2 BSD)
+SIGVTALRM equ 02000000h ;26     Term    Virtual alarm clock (4.2 BSD)
+SIGPROF   equ 04000000h ;27     Term    Profiling timer expired
+SIGWINCH  equ 08000000h ;28     Ign     Window resize signal (4.3 BSD, Sun)
+
+
+; NAME
+;>1 terminal
+;  keysig_wait_set - flush and read one key string or mouse click
+; INPUTS
+;    [block_mask] = signal mask for signals to block
+; OUTPUT
+;    eax has error or signal fd
+;    if eax positive [signal_fd] also set to signal fd
+; NOTES
+;   source file: wait_keysig.asm
+;   The keyboard is flushed before reading key data.
+;   function crt_open must be called before using!
+;<
+; * ----------------------------------------------
+;*******
+
+SIG_BLOCK 	equ	0
+SIG_UNBLOCK	equ	1
+SIG_SETMASK	equ	2
+
+;;caught_signals	equ	SIGABRT+SIGBUS+SIGCHLD+SIGFPE+SIGHUP+SIGINT+SIGILL+SIGPIPE+SIGQUIT+SIGSEGV+SIGTERM+SIGTTIN+SIGTTOU+SIGWINCH
+caught_signals	equ	SIGHUP+SIGINT+SIGWINCH
+
+keysig_wait_set:
+; signprocmask - block signals we want to assign a fd
+;
+  mov	eax,126	;sigprocmask function#
+  mov	ebx,SIG_BLOCK	;block signal
+  mov	ecx,block_mask
+;  mov	edx,save_old_mask
+  xor	edx,edx
+  mov	esi,8
+  int	80h
+
+;  mov	eax,126	;sigprocmask
+;  mov	ebx,SIG_SETMASK ;set signal
+;  mov	ecx,save_old_mask
+;  mov	edx,save_mod_mask
+;  int	80h
+
+;assign a fd to blocked signals
+
+  mov	eax,321		;signalfd function#
+  mov	ebx,-1		;assign a fd 
+  mov	ecx,block_mask	;signal set bit array
+  mov	edx,8		;flag=0
+;;  xor	edx,edx		;flag=0
+  xor	esi,esi		;???
+  int	80h		;returns fd if success
+  or	eax,eax
+  js	kws_exit	;exit if error
+  mov	[signal_fd],eax	;save fd
+kws_exit:
+  ret
+
+  [section .data]
+signal_fd	dd	0
+block_mask	dd	caught_signals
+                dd	0
+save_old_mask	dd	0
+;save_mod_mask	dd	0
+
+;--------------------------------------------
+ 
+  [section .text]
+extern file_close
+
+keysig_wait_close:
+  mov	ebx,[signal_fd]
+  call	file_close
+  ret
+
+
+
+;-------------------------------------------------
+
+  [section .text]
+;  extern key_status
+  extern kbuf
+  extern key_flush
+;  extern key_poll
+  extern mouse_check
+  extern raw_set2,raw_unset2
+
+ [section .text]
+; NAME
+;>1 terminal
+;  keysig_wait - flush and read one key string or mouse click
+; INPUTS
+;    signalfd call to setup signals of interest
+;    call set_raw1 to set terminal state
+; OUTPUT
+;    kbuf has key sequence ending with zero byte
+;    if key sequence starts with byte of -1 then
+;    it is a mouse click and following bytes are:
+;     button(0-3), column(1-x), row(1-x)
+;     button = 0=left 1=middle 2=right 3=release
+;    if signal kbuf has -2 at start, followed by pointer to return buffer
+;       eax has size of return struc, may be multiple entries.
+;       eax returned 0feh (254) in test. The buffer contained
+;       dd 0fh <- signal number 15, SIGTERM
+;       dd 0   (unused)
+;       dd 0   sig code ?
+;       dd 9ee <- PID of sender
+;       dd 3e8 <- UID of sender
+; NOTES
+;   source file: wait_keysig.asm
+;   The keyboard is flushed before reading key data.
+;   Signals handled and recomended action:
+;    SIGWINCH                                - resize display
+;    SIGCHLD,SIGTTIN,SIGTTOU,SIGINT,SIGQUIT  - log and ignore
+;    SIGBUS,SIGFPE,SIGHUP,SIGILL,SIGPIPE     - log and abort
+;    SIGSEGV,SIGTERM                         - log and abort
+;<
+; * ----------------------------------------------
+;*******
+; Note:  The convoluted logic that follows was added
+; to keep xterm happy.  For some reason the keys are not
+; read as separate entities on xterms.  We need extra
+; logic to find start and end of key.
+; This problem only appears when a key is held down and
+; repeating.
+;
+  global keysig_wait
+
+keysig_wait:
+  mov	eax,[signal_fd]
+  mov	[kpoll_sig_fd],eax
+kw_loop:
+  mov	word [kpoll_stdin_rtn],0
+  mov	word [kpoll_sig_rtn],0
+  mov	eax,168			;poll
+  mov	ebx,kpoll_tbl
+  mov	ecx,2			;two structures at poll_tbl
+  mov	edx,-1			;wait forever
+  int	byte 80h
+  or	eax,eax			;returns error or number of structures with data
+  js	kw_loop			;?
+  test	word [kpoll_sig_rtn],POLLIN ;is there signal data (01 bit)
+  jnz	kw_signal
+  test	word [kpoll_stdin_rtn],POLLIN	;is there data to read 01h
+  jnz	kw_stdin
+  jmp	short kw_loop		;?
+
+kw_signal:
+  mov	eax,3			;read function
+  mov	ebx,[kpoll_sig_fd]	;get signal fd
+  mov	ecx,sig_buf		;buffer
+  mov	edx,size_sig_buf
+  int	80h
+  or	eax,eax
+  js	kw_loop			;loop if error?
+  mov	[kbuf],byte -2
+  mov	dword [kbuf+1],sig_buf	;returned structure
+  jmp	kw_exit
+
+kw_stdin:
+  mov	ecx,kbuf
+  mov	edx,36			;read 20 keys
+  mov	eax,3				;sys_read
+  mov	ebx,0				;stdin
+  int	byte 0x80
+  or	eax,eax
+  js	kw_loop			;?
+  add	ecx,eax
+  mov	byte [ecx],0		;terminate string for now
+;strip any extra data from end
+  mov	esi,kbuf
+  cmp	byte [esi],1bh
+  je	mb_loop
+  cmp	byte [esi],0c3h		;alt keys on debian xterm start with c3
+  je	mb_loop
+  cmp	byte [esi],0c2h
+  je	mb_loop			;jmp if meta key
+  inc	esi
+  jmp	short rm_20
+;check for end of escape char
+mb_loop:
+  inc	esi
+  cmp	[esi],byte 0
+  je	rm_20			;jmp if end of char
+  cmp	byte [esi],0c2h
+  je	rm_20			;jmp if meta char
+  cmp	byte [esi],0c3h
+  je	rm_20			;jmp if meta char
+  cmp	byte [esi],1bh
+  jne	mb_loop			;loop till end of escape sequence
+rm_20:
+  mov	byte [esi],0		;terminate string
+  call	mouse_check		;check if mouse data read
+kw_exit:
+  ret 
+;------------------
+  [section .data]
+kpoll_tbl:
+		dd	0	;stdin
+		dw	POLLIN+POLLERR+POLLHUP	;events of interest
+kpoll_stdin_rtn	dw	0 ;returned events, POLLIN or POLLERR or POLLHUP
+
+kpoll_sig_fd	dd	0	;set to signal fd
+		dw	POLLIN+POLLERR+POLLHUP	;events of interest
+kpoll_sig_rtn	dw	0 ;returned events, POLLIN or POLLERR or POLLHUP
+
+
+sig_buf	times 508 db  0
+size_sig_buf equ 508
+
+
+;       The format of the signalfd_siginfo structure(s) returned by "read"
+;       from a signalfd file descriptor is as follows:;
+;
+;           struct signalfd_siginfo {
+;               uint32_t ssi_signo;   /* Signal number */
+;               int32_t  ssi_errno;   /* Error number (unused) */
+;               int32_t  ssi_code;    /* Signal code */
+;               uint32_t ssi_pid;     /* PID of sender */
+;               uint32_t ssi_uid;     /* Real UID of sender */
+;               int32_t  ssi_fd;      /* File descriptor (SIGIO) */
+;               uint32_t ssi_tid;     /* Kernel timer ID (POSIX timers)
+;               uint32_t ssi_band;    /* Band event (SIGIO) */
+;               uint32_t ssi_overrun; /* POSIX timer overrun count */
+;               uint32_t ssi_trapno;  /* Trap number that caused signal */
+;               int32_t  ssi_status;  /* Exit status or signal (SIGCHLD) */
+;               int32_t  ssi_int;     /* Integer sent by sigqueue(3) */
+;               uint64_t ssi_ptr;     /* Pointer sent by sigqueue(3) */
+;               uint64_t ssi_utime;   /* User CPU time consumed (SIGCHLD) */
+;               uint64_t ssi_stime;   /* System CPU time consumed (SIGCHLD) */
+;               uint64_t ssi_addr;    /* Address that generated signal
+;                                        (for hardware-generated signals) */
+;               uint8_t  pad[X];      /* Pad size to 128 bytes (allow for
+;                                         additional fields in the future) */
+;           };
+;
+;       Each of the fields in this structure is analogous to the similarly
+;       named field in the siginfo_t structure.  The siginfo_t structure is
+;       described in [43]sigaction(2).  Not all fields in the returned
+;       signalfd_siginfo structure will be valid for a specific signal; the
+;       set of valid fields can be determined from the value returned in the
+;       ssi_code field.  This field is the analog of the siginfo_t si_code
+;       field; see [44]sigaction(2) for details.
+
+  [section .text]
+
+
+

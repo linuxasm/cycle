@@ -1,0 +1,550 @@
+  extern crt_color_at
+  extern read_stdin
+  extern get_prompted_string
+;
+  [section .text]
+;--------------------------------------------------------
+find_setup:
+;show menu
+  mov	esi,find_line1
+  mov	ebp,find_color_tbl
+  call	build_line
+  mov	ah,[term_rows]
+  dec	ah
+  mov	al,1
+  call	move_cursor		;position cursor
+  mov	ecx,lib_buf
+  call	crt_str
+
+  mov	esi,find_line2
+  mov	ebp,find_color_tbl
+  call	build_line
+  mov	ah,[term_rows]
+  mov	al,1
+  call	move_cursor		;position cursor
+  mov	ecx,lib_buf
+  call	crt_str
+
+  mov	al,[term_rows]
+  mov	[string_display_row],al
+
+;check if window large enough to hold string
+  mov	al,[string_display_column]
+  add	al,[get_string_max_len]
+  cmp	al,[term_columns]
+  jb	length_ok
+  mov	[main_loop_flag],byte display_all_state ;disable string entry
+  jmp	short fs_exit
+
+length_ok:
+  call	show_get_string
+
+  mov	[menu_mode],byte 1
+  mov	[main_loop_flag],byte display_body_state
+fs_exit:
+  ret
+
+  [section .data]
+;
+; menu line codes: 1=spacer  0=end of data
+;
+find_line1:
+  db 1,' enter find string below          ',1,'  find  ',1,' find   ',1,' exit ',0
+find_line2:
+  db 1
+find_line2_string:
+  db '                                  '
+string_end:
+	db 1,'from top',1,' next   ',1,' find ',0
+find_process_names:
+  dd     set_cursor,      find_from_top, find_again,  exit_find,0
+
+get_string_top_ptr	dd	find_line2_string
+get_string_cursor_ptr	dd	find_line2_string
+get_string_end_ptr	dd	string_end
+get_string_max_len	dd	string_end - find_line2_string
+;(colors are in block at end of cycle.asm)
+string_display_row	db	0
+string_display_column	db	2
+
+blink_underline:	db	1bh,'[4',3bh,'5',3bh,'30',3bh,'47m',0
+
+reshow_menu_flag	db	0 ;set if message in menu
+  [section .text]
+
+;******* search.asm *************************************
+; input: - database shown above
+;        - kbuf has current event
+; 
+find_string:
+  mov	al,[kbuf]
+  cmp	al,-1
+  je	find_mouse_hit
+;key_hit:
+  call	decode_find_key
+  jmp	short find_tail
+;mouse hit comes here
+find_mouse_hit:
+  call	decode_find_mouse
+find_tail:
+  call	ecx
+;
+; returns 0 = do nothing
+;  (al)   1 = only show string
+;         2 = show all
+;         3 = only set reshow_menu_flag
+;         4 = exit find
+  push	eax
+  cmp	[reshow_menu_flag],byte 0
+  je	no_reshow
+  call	find_setup
+no_reshow:
+  pop	eax
+
+  cmp	al,0
+  je	no_action
+  cmp	al,1
+  je	only_show_string
+  cmp	al,2
+  je	show_all
+  cmp	al,3
+  je	set_reshow_flag
+;assume al=4 exit find
+  mov	[menu_mode],byte 0
+  mov	[main_loop_flag],byte display_all_state
+  jmp	short find_string_tail
+only_show_string:
+  call	show_get_string
+  mov	[main_loop_flag],byte ignore_state
+  jmp	short find_string_tail
+show_all:
+  mov	[main_loop_flag],byte display_all_state
+  jmp	short find_string_tail
+set_reshow_flag:
+  mov	[reshow_menu_flag],byte 1
+no_action:
+  mov	[main_loop_flag],byte ignore_state
+find_string_tail:
+  ret
+
+;-----------------------------------------------------------
+; process mouse event
+;   input:  kbuf has mouse data -1,button,col,row
+; output: ecx = process to call
+decode_find_mouse:
+  mov	bl,[kbuf+2]	;get column 1+
+  mov	bh,[kbuf+3]	;get row 1+
+  mov	al,[kbuf+1]	;get event type
+  mov	word [mouse_col],bx
+  mov	byte [mouse_button],al
+;compute menu row
+  mov	cl,[term_rows]
+  dec	cl
+  cmp	bh,cl		;click on menu row?
+  jae	find_menu_click	;jmp if menu click
+  jmp	find_mouse_exit
+
+find_menu_click:
+  mov	esi,find_line2
+  mov	edi,find_process_names
+  mov	bl,[mouse_col]
+  call	mouse_line_decode
+
+find_mouse_exit:      
+  ret
+;-----------------------------------------------------------
+; decode_key - look up processing for this key
+;  input - kbuf - has char zero terminated
+;  output - ecx = ptr to processing or zero if no match
+;           eax,ebx modified
+decode_find_key:
+  mov	esi,key_action_tbl
+  call	key_decode1
+  mov	ecx,eax
+  ret
+
+  [section .data]
+;------------------------------------------------
+; This  table is used by get_string to decode keys
+;  format: 1. first dword = process for normal text
+;          2. series of key-strings & process's
+;          3. zero - end of key-strings
+;          4. dword = process for no previous match
+;
+key_action_tbl:
+  dd	gs_normal_char		;alpha key process
+  db 1bh,5bh,48h,0		; pad_home
+   dd gs_home
+  db 1bh,5bh,31h,7eh,0		;138 home (non-keypad)
+   dd gs_home
+  db 1bh,4fh,77h,0		;150 pad_home
+   dd gs_home
+  db 1bh,5bh,44h,0		; pad_left
+   dd gs_left
+  db 1bh,4fh,74h,0		;143 pad_left
+   dd gs_left
+  db 1bh,5bh,34h,7eh,0		;139 end (non-keypad)
+   dd gs_left
+  db 1bh,5bh,43h,0		; pad_right
+   dd gs_right
+  db 1bh,4fh,76h,0		;144 pad_right
+   dd gs_right
+  db 1bh,5bh,46h,0		; pad_end
+   dd gs_end
+  db 1bh,4fh,71h,0		;145 pad_end
+   dd gs_end
+  db 1bh,5bh,33h,7eh,0		; pad_del
+   dd gs_del
+  db 1bh,4fh,6eh,0		;149 pad_del
+   dd gs_del
+  db 7fh,0			; backspace
+   dd gs_backspace
+  db 80h,0
+   dd gs_backspace
+  db 08,0			;140 backspace
+   dd gs_backspace
+  db 0dh,0			; enter key
+   dd gs_enter_key
+  db 0ah,0
+   dd gs_enter_key		;
+  db 1bh,0
+   dd gs_escape_key
+  db 0		;end of table
+  dd gs_passkey_done		;no-match process
+
+zero_stuff_char	db	0	;string end char save
+zero_stuff_loc	dd	0
+  [section .text]
+;-----------------------
+
+
+;--------- mouse commands -------------------
+;--------------------------------------------
+set_cursor:
+  xor	eax,eax
+  mov	al,[mouse_col]
+  dec	eax
+  add	eax,[get_string_top_ptr]
+  mov	[get_string_cursor_ptr],eax
+  mov	al,1	;reshow string
+  ret
+;--------------------------------------------
+find_from_top:
+  mov	edi,fbuf
+  jmp	do_search
+
+;--------------------------------------------
+find_again:
+  cld
+  mov	edi,[index_ptr_selected]
+  mov	edi,[edi]		;get start of search
+;scan to end
+fa_loop:
+  mov	al,[edi]		;get char
+  inc	edi
+  cmp	al,0ah
+  jne	fa_loop
+  cmp	edi,[file_end_ptr]
+  jae	fc_fail		;jmp if at end of buffer
+do_search:
+;put zero at end of string
+  mov	esi,[get_string_end_ptr] ;get end
+ds_loop:
+  dec	esi
+  cmp	[esi],byte ' '
+  je	ds_loop
+  inc	esi			;move back to space
+;put zero at endof string
+  mov	[zero_stuff_loc],esi
+  mov	al,[esi]		;get data
+  mov	[zero_stuff_char],al
+  mov	[esi],byte 0		;terminate string
+  mov	esi,find_line2_string	;match string
+  call	string_search		;edi,ebx = match if carry
+;restore end of string char
+  mov	al,[zero_stuff_char]
+  mov	esi,[zero_stuff_loc]
+  mov	[esi],al
+
+  jc	fc_fail			;jmp if string not found
+;
+; scan to start of string
+;
+find_10:
+  cmp	byte [edi],0ah
+  je	find_20			;jmp if beginning found
+  cmp	edi,fbuf
+  je	find_21			;jmp if at top of buffer
+  dec	edi
+  jmp	find_10			;loop back and keep looking
+find_20:
+  inc	edi			;move forward past 0ah
+;search index for this entry
+find_21:
+  mov	esi,index_buf
+find_22_lp:
+  cmp	esi,[index_buf_end]
+  je	find_err1
+  cmp	edi,[esi]
+  je	found_index
+  add	esi,4
+  jmp	short find_22_lp
+
+find_err1:
+  mov	esi,index_format_err
+  call	log_str
+  jmp	fc_fail
+
+found_index:
+  mov	[index_ptr_selected],esi
+  mov	[index_ptr_curr_page],esi
+;
+; display match string found
+;
+;  mov	eax,[todo_data_color]
+;  mov	bl,1				;column
+;  mov	bh,[crt_rows]
+;  sub	bh,12				;row
+;  mov	ecx,string_found_msg
+;  call	crt_color_at
+  mov	al,2			;show all display
+  jmp	short fc_exit
+;
+; display not found msg
+;
+fc_fail:
+;  mov	ecx,string_not_found_msg
+;fc_display:
+;  mov	eax,[todo_data_color]
+;  mov	bl,1				;column
+;  mov	bh,[crt_rows]
+;  sub	bh,12				;row
+;  call	crt_color_at
+  mov	al,3				;set reshow menu flag
+fc_exit:
+  ret
+
+;--------------------
+  [section .data]
+index_format_err db 0ah,'Index error, program bug',0ah,0
+  [section .text]
+
+;--------------------------------------------
+exit_find:
+  mov	al,4	;set exit state
+  ret
+;--------------------------------------------
+
+;-- key commands -------------------------------
+;------------------------------------------------
+; keyboard processing
+;------------------------------------------------
+gs_ignore_char:
+  mov	al,0	;do nothing
+  ret
+;-------------
+gs_normal_char:
+  mov	esi,[get_string_cursor_ptr]
+  mov	al,[kbuf]
+  mov	[esi],al
+  jmp	short gs_right
+;-----------------
+gs_right:
+  mov	esi,[get_string_cursor_ptr]
+  inc	esi
+  cmp	esi,[get_string_end_ptr]
+  je	gs_right_exit
+  mov	[get_string_cursor_ptr],esi
+gs_right_exit:
+  mov	al,1	;reshow string
+  ret
+
+;-----------------
+gs_home:
+  mov	esi,[get_string_top_ptr]
+  mov	[get_string_cursor_ptr],esi
+  mov	al,1	;reshow string
+  ret
+;-----------------
+gs_end:
+  mov	esi,[get_string_end_ptr]
+  dec	esi
+  mov	[get_string_cursor_ptr],esi
+  mov	al,1	;reshow string
+  ret
+
+;-----------------
+gs_left:
+  mov	esi,[get_string_cursor_ptr]
+  cmp	esi,[get_string_top_ptr]
+  je	gs_left_exit
+  dec	esi
+  mov	[get_string_cursor_ptr],esi
+gs_left_exit:
+  mov	al,1	;reshow string
+  ret
+
+;-----------------
+gs_del:
+  mov	esi,[get_string_cursor_ptr]
+  mov	al,' '
+  mov	[esi],al
+  mov	al,1	;reshow string
+  ret
+
+
+;-----------------
+gs_backspace:
+  mov	esi,[get_string_cursor_ptr]
+  cmp	esi,[get_string_top_ptr]
+  je	gs_backspace_exit
+  mov	al,' '
+  mov	[esi-1],al
+  call	gs_left
+gs_backspace_exit:
+  mov	al,1	;reshow string
+  ret
+
+;-----------------
+gs_enter_key:
+  jmp	find_again
+;-----------------
+gs_escape_key:
+  jmp	exit_find
+;-----------------
+gs_passkey_done:
+  jmp	gs_ignore_char
+
+
+
+
+
+;-------------------------------------
+show_get_string:
+  mov	edi,work_buf
+  mov	esi,[get_string_top_ptr]
+  mov	ah,[string_display_row]
+  mov	al,[string_display_column]
+  call	move_cursor
+  mov	eax,[entry_string_color]
+  call	mov_color
+sgs_build:
+  cmp	esi,[get_string_end_ptr]
+  jae	sgs_done
+  cmp	esi,[get_string_cursor_ptr]
+  jne	sgs_normal
+
+  mov	eax,[entry_cursor_blink]
+  mov	[blink_underline + 7],ah
+  mov	[blink_underline + 10],al
+
+  push	esi
+  mov	esi,blink_underline
+  call	str_move
+  pop	esi
+
+  movsb			;move data
+  mov	eax,[entry_string_color]
+  call	mov_color
+  jmp	short sgs_build
+sgs_normal:
+  movsb
+  jmp	short sgs_build
+sgs_done:
+  mov	[edi],byte 0
+  mov	ecx,work_buf
+  call	crt_str
+  ret
+
+;--------------------
+;inputs
+; fbuf = buffer which will be scanned
+; [file_end_ptr] - end of file ptr
+; esi = match string
+; edi - cursor position in buffer
+;output
+; carry = not found
+; edi,ebx = match pointer if no carry
+; clobbered = ecx,eax,esi
+;
+string_search:
+  mov	[find_str],esi		;save pointer to match string
+;
+; initialize start of match string
+;
+fnd0:
+  mov	ch,0dfh			;get case mask
+  mov	esi,[find_str]		;get match string
+  cld
+  lodsb				;get match character
+  or	al,al
+  jz	notfnd			;exit if no string entered
+  cmp	al,41h
+  jb	fnd1			;jmp if not alpha character
+  and	al,ch			;adjust case
+;
+; looking for match on first character, loop
+;
+fnd1:
+  mov	cl,byte [edi]		;get character from buffer
+  cmp	cl,41h			;check if possible alpha
+  jb	fnd6			;jmp if not alpha
+  and	cl,ch			;adjust case
+fnd6:
+  cmp	al,cl			;compare match string to buffer
+  je	fnd2			;jmp if first char. matches
+  inc	edi			;add edi,[scan_direction]	;direction of find control
+  cmp	edi,[file_end_ptr]
+  ja	notfnd			;jmp if at end of buffer
+  cmp	edi,fbuf		;check if backwards scan at start of buffer
+  ja	fnd1			;loop back if still looking for first match char
+  jmp	notfnd
+;
+; we have found first match
+;
+fnd2:
+  mov	ebx,edi			;save  start of match
+;
+; matching loop
+;
+fnd3:
+  lodsb			;get next match string char
+  or	al,al		;=end?
+  jz	fnd		;done if match
+  cmp	al,41h
+  jb	fnd7		;jmp if possible alpha character
+  and	al,ch		;adjust case of char
+fnd7:
+  inc	edi
+  cmp	edi,[file_end_ptr]
+  jae	notfnd		;exit if string not found
+  mov	cl,byte [edi]	;get next buffer char
+  cmp	cl,41h
+  jb	fnd10
+  and	cl,ch		;adjust case
+fnd10:
+  cmp	al,cl		;compare two upper case characters
+  jz	fnd3		;loop if match
+;
+; this partial match failed, go back and reinitialize match string
+;
+  mov	edi,ebx
+  inc	edi		;move to next buffer position
+  jmp	fnd0
+;
+; exit
+;
+notfnd:
+  stc
+  ret
+fnd:
+  mov	edi,ebx
+  clc
+  ret
+
+ [section .data]
+
+find_str	dd	0
+
+ [section .text]
+

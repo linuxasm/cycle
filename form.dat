@@ -1,0 +1,30 @@
+enter todo data at bottom using instructions that follow:
+
+  DEL - enter  DEL  to delete or _?_ for normal state
+  RECYCLE - enter           1yr,2yr,..9yr = annual recycling
+                            1mo,2mo,..9mo = monthly recycling
+                            1wk,2wk,..9wk = weekly recycleing
+                            1da,2da,..9da = daily recycling
+                            0da for no recycling
+                            eom for end of month recycling
+  DATE - enter as yyyy/mm/dd
+  PRIOEIRY - daily priority, and char can be used
+  TODO - enter text for todo
+  LINK - process LDATA field by
+                set link as: (blank) = no linked data
+                VIEW = open link field as text view (asmview)
+                EDIT = open link field with editor (asmedit)
+                OPEN = open link field with xdg-open
+                FILE = open link field as directory (asmfile)
+  LDATA - optional link field, single name = note stored at /.cycle/note
+                      full path can be any local file
+                      html:// can be used with OPEN
+------------------------------------------------------------------------
+
+DEL=_?_
+RECYCLE=1yr
+DATE=2013/09/11
+PRIORITY=P
+TODO=
+LINK=____
+LDATA=                                                                                                                                                                                                        
